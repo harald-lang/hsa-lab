@@ -136,8 +136,8 @@ $(PREFIX)%.o: %.c
 # OpenCL Offline Compiler (CLOC)
 #CLOCFLAGS?=-opt 0
 
-compile_kernel_hsail=cloc $(CLOCFLAGS) -q -o $@ -hsail $<
-compile_kernel_brig=cloc $(CLOCFLAGS) -q -o $@ $<
+compile_kernel_hsail=cloc.sh $(CLOCFLAGS) -q -o $@ -hsail $<
+compile_kernel_brig=cloc.sh $(CLOCFLAGS) -q -o $@ $<
 compile_hsail_to_brig=HSAILasm -o $@ $<
 
 $(PREFIX)%.hsail: %.cl
