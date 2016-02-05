@@ -1,0 +1,7 @@
+#MARCH:=-mtune=core-avx2 -march=core-avx2
+MARCH:=-march=native
+#DEBUG:=1
+ALLOWWARNINGS:=1
+
+# PATH TO GTEST
+GTEST_INCLUDE_PATH:=test

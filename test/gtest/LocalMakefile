@@ -1,0 +1,3 @@
+src_gtest:=test/gtest/gtest-all.cpp
+
+CXXFLAGS-test/gtest/gtest-all:=-Wno-missing-field-initializers
