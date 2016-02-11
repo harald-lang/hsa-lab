@@ -1,7 +1,8 @@
 #include <rts/hsa/KernelArgs.hpp>
 #include <hsa.h>
 
-namespace rts { namespace hsa {
+namespace rts {
+namespace hsa {
 
-
-}}
+}
+}
