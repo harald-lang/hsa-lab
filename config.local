@@ -1,5 +1,5 @@
 #MARCH:=-mtune=core-avx2 -march=core-avx2
-MARCH:=-march=native
+#MARCH:=-march=native
 #DEBUG:=1
 ALLOWWARNINGS:=1
 
