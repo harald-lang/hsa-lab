@@ -15,7 +15,7 @@ using namespace std;
 
 HsaContext::HsaContext(HsaRuntime& rt) :
       rt(rt), program({0}), codeObject({0}), executable({0}),
-            queue(nullptr), queueSize(0), argumentMemoryPtr(nullptr), argumentSize(0) {
+            queue(nullptr), argumentMemoryPtr(nullptr), argumentSize(0) {
 
    if (HsaUtils::isInitialized() == false) {
       throw HsaException("HSA runtime not initialized.");
@@ -257,15 +257,8 @@ void HsaContext::iterateKernelCodeSymbols(std::function<void(std::string&)> call
          }, &callback);
 }
 
-//hsa_kernel_dispatch_packet_t* HsaContext::queueGetKernelDispatchPacketPtr(const uint64_t packetId) {
-//	const uint32_t queueMask = queueSize - 1;
-//	hsa_kernel_dispatch_packet_t* packetPtr =
-//		reinterpret_cast<hsa_kernel_dispatch_packet_t*>(queue->base_address) + (packetId & queueMask);
-//	return packetPtr;
-//}
-
 void* HsaContext::getArgBufferPtr(const uint64_t packetId) {
-   const uint32_t queueMask = queueSize - 1;
+   const uint32_t queueMask = queue->size - 1;
    const uint64_t pos = packetId & queueMask;
    void* argPtr = reinterpret_cast<uint8_t*>(argumentMemoryPtr) + (pos * argumentSize);
    return argPtr;

@@ -72,7 +72,7 @@ TEST(HsaContext, Dispatch) {
    memset(output, 0, n * sizeof(size_t));
 
    std::string kernelName = "&__OpenCL_storeGlobalId_kernel";
-   ctx.dispatch<size_t*, size_t>(kernelName, n, output, n);
+   ctx.dispatch<size_t*, size_t>(kernelName, {n, 128}, output, n);
 
    for (size_t i = 0; i < n; i++) {
       ASSERT_EQ(i, output[i]);
@@ -98,7 +98,7 @@ TEST(HsaContext, MultipleDispatches) {
    memset(output, 42, n * sizeof(size_t));
 
    for (size_t i = 0; i < n; i++) {
-      ctx.dispatch<size_t*, size_t>("&__OpenCL_storeGlobalId_kernel", 1, &output[i], 1);
+      ctx.dispatch<size_t*, size_t>("&__OpenCL_storeGlobalId_kernel", {1, 128}, &output[i], 1);
    }
 
    for (size_t i = 0; i < n; i++) {
@@ -128,7 +128,7 @@ TEST(HsaContext, DISABLED_DispatchBatch) {
    const auto kernelObject = ctx.getKernelObject(kernelName);
 
    for (size_t i = 0; i < n; i++) {
-      ctx.dispatchBatch<size_t*, size_t>(kernelObject, 1, &output[i], 1);
+      ctx.dispatchBatch<size_t*, size_t>(kernelObject, {1, 128}, &output[i], 1);
    }
    ctx.waitForBatchCompletion();
 
@@ -157,8 +157,8 @@ TEST(HsaContext, BundleModules) {
    size_t* output = new size_t[n];
    memset(output, 0, n * sizeof(size_t));
 
-   ctx.dispatch<size_t*, size_t>("&__OpenCL_storeGlobalId_kernel", n, output, n);
-   ctx.dispatch<size_t*, size_t, size_t>("&__OpenCL_add_kernel", n, output, 42, n);
+   ctx.dispatch<size_t*, size_t>("&__OpenCL_storeGlobalId_kernel", {n, 128}, output, n);
+   ctx.dispatch<size_t*, size_t, size_t>("&__OpenCL_add_kernel", {n, 128}, output, 42, n);
 
    for (size_t i = 0; i < n; i++) {
       ASSERT_EQ(i + 42, output[i]);
@@ -183,7 +183,7 @@ TEST(HsaContext, GroupLocalMemory) {
    uint32_t* output = new uint32_t[n];
    memset(output, 0, n * sizeof(uint32_t));
 
-   ctx.dispatch<uint32_t*>("&__OpenCL_groupLocalMemory_kernel", n, output);
+   ctx.dispatch<uint32_t*>("&__OpenCL_groupLocalMemory_kernel", {n, 128}, output);
 
    for (uint32_t i = 0; i < n; i++) {
       ASSERT_EQ(i, output[i]);
@@ -209,7 +209,7 @@ TEST(HsaContext, DISABLED_DeviceEnqueue) {
    memset(output, 0, n * sizeof(size_t));
 
    std::string kernelName = "&__OpenCL_enqueueStoreGlobalId_kernel";
-   ctx.dispatch<size_t*, size_t>(kernelName, n, output, n);
+   ctx.dispatch<size_t*, size_t>(kernelName, {n, 128}, output, n);
 
    cout << output[0] << endl;
    for (size_t i = 0; i < n; i++) {

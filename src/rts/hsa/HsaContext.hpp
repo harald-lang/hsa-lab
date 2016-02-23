@@ -26,16 +26,19 @@ public:
       uint32_t privateSegmentSize;
    };
 
+   struct KernelLaunchParameters {
+      uint32_t numElements;
+      uint16_t workgroupSize;
+   };
+
    struct Future {
       hsa_signal_t completionSignal;
 
-      Future()
-      :
+      Future() :
             completionSignal({0}) {
       }
 
-      Future(hsa_signal_t completionSignal)
-      :
+      Future(hsa_signal_t completionSignal) :
             completionSignal(completionSignal) {
       }
 
@@ -44,8 +47,7 @@ public:
          // of the completion signal to become zero
          while (hsa_signal_wait_acquire(completionSignal, HSA_SIGNAL_CONDITION_EQ,
                0, UINT64_MAX,
-               HSA_WAIT_STATE_BLOCKED) != 0)
-            ;
+               HSA_WAIT_STATE_BLOCKED) != 0) {};
          // Done! The kernel has completed. Time to cleanup resources and leave
          HsaUtils::apiCall([&] {return hsa_signal_destroy(completionSignal);});
       }
@@ -67,19 +69,19 @@ public:
    KernelDescriptor getKernelObject(const std::string &kernelSymbolName);
 
    template<typename ... Args>
-   inline void dispatch(const std::string &kernelSymbolName, const size_t n, const Args &... args) {
+   inline void dispatch(const std::string &kernelSymbolName, const KernelLaunchParameters n, const Args &... args) {
       const KernelDescriptor kernel = getKernelObject(kernelSymbolName);
       dispatch<Args...>(kernel, n, args...);
    }
 
    template<typename ... Args>
-   inline void dispatch(const KernelDescriptor &kernel, const size_t n, const Args &... args) {
+   inline void dispatch(const KernelDescriptor &kernel, const KernelLaunchParameters n, const Args &... args) {
       Future task = dispatchAsync<Args...>(kernel, n, args...);
       task.wait();
    }
 
    template<typename ... Args>
-   inline Future dispatchAsync(const KernelDescriptor &kernel, const size_t n, const Args &... args) {
+   inline Future dispatchAsync(const KernelDescriptor &kernel, const KernelLaunchParameters n, const Args &... args) {
       // Request and populate an AQL packet.
       const uint64_t packetId = queueRequestPacketId();
       hsa_kernel_dispatch_packet_t *packetPtr = queueGetKernelDispatchPacketPtr(packetId);
@@ -88,11 +90,11 @@ public:
       // Reserved fields, private and group memory, and completion signal are all set to 0.
       // Note: The header (first 4 bytes) will be written atomically later on.
       std::memset(((uint8_t *) packetPtr) + 4, 0, sizeof(hsa_kernel_dispatch_packet_t) - 4);
-      const size_t defaultWorkgroupSize = 1024; // TODO: make hardware dependent parameter configurable
-      packetPtr->workgroup_size_x = std::min(n, defaultWorkgroupSize);
+      const uint32_t workgroupSize = n.workgroupSize == 0 ? 128 : n.workgroupSize;
+      packetPtr->workgroup_size_x = std::min(n.numElements, workgroupSize);
       packetPtr->workgroup_size_y = 1;
       packetPtr->workgroup_size_z = 1;
-      packetPtr->grid_size_x = n;
+      packetPtr->grid_size_x = n.numElements;
       packetPtr->grid_size_y = 1;
       packetPtr->grid_size_z = 1;
 
@@ -134,7 +136,7 @@ public:
 
    template<typename ... Args>
    inline void dispatchBatch(const KernelDescriptor &kernelObject,
-         const size_t n, const Args&... args) {
+         const KernelLaunchParameters n, const Args&... args) {
       // Enqueue AQL packet.
       const uint64_t packetId = enqueueForBatchProcessing<Args...>(kernelObject, n, args...);
 
@@ -143,13 +145,24 @@ public:
    }
 
    template<typename ... Args>
-   inline uint64_t enqueueForBatchProcessing(const KernelDescriptor &kernel, const size_t n, const Args &... args) {
+   inline uint64_t enqueueForBatchProcessing(
+         const KernelDescriptor& kernel, const KernelLaunchParameters n, const Args &... args) {
+
       // Request and populate an AQL packet.
       const uint64_t packetId = queueRequestPacketId();
       hsa_kernel_dispatch_packet_t *packetPtr = queueGetKernelDispatchPacketPtr(packetId);
-      void *argPtr = getArgBufferPtr(packetId);
+      void* argPtr = getArgBufferPtr(packetId);
 
-      packetPtr->grid_size_x = n;
+      // Reserved fields, private and group memory, and completion signal are all set to 0.
+      // Note: The header (first 4 bytes) will be written atomically later on.
+      std::memset(((uint8_t *) packetPtr) + 4, 0, sizeof(hsa_kernel_dispatch_packet_t) - 4);
+      const uint32_t workgroupSize = n.workgroupSize == 0 ? 128 : n.workgroupSize;
+      packetPtr->workgroup_size_x = std::min(n.numElements, workgroupSize);
+      packetPtr->workgroup_size_y = 1;
+      packetPtr->workgroup_size_z = 1;
+      packetPtr->grid_size_x = n.numElements;
+      packetPtr->grid_size_y = 1;
+      packetPtr->grid_size_z = 1;
 
       // Indicate which executable code to run. (= pointer to the finalized kernel)
       packetPtr->kernel_object = kernel.kernelObject;
@@ -159,12 +172,14 @@ public:
       // Use the batch completion signal. All packets that belong to a batch share the same signal.
       packetPtr->completion_signal = batchCompletionSignal;
 
+      std::cout << "AQL written" << std::endl;
       // Copy arguments.
       //   Note: OpenCL kernels compiled with CLOC have 6 additional leading
       //   parameters which can all be set to NULL.
       constexpr size_t numLeadingParameters = 6;
       uintptr_t *writer = reinterpret_cast<uintptr_t *>(argPtr);
       writeArgs(&writer[numLeadingParameters], args...);
+      std::cout << "Args written" << std::endl;
 
       // Atomically increment the completion signal value
       hsa_signal_add_relaxed(batchCompletionSignal, 1);
@@ -190,30 +205,34 @@ public:
    }
 
 protected:
-   void iterateKernelCodeSymbols(std::function<void(std::string &)> callback);
+   void iterateKernelCodeSymbols(std::function<void(std::string&)> callback);
 
    hsa_executable_symbol_t
    getExecutableSymbol(const std::string &kernelSymbolName);
 
    inline uint64_t queueRequestPacketId() {
-      return hsa_queue_add_write_index_relaxed(queue, 1);
+      // Atomically request a new packet ID.
+      uint64_t packetId = hsa_queue_add_write_index_release(queue, 1);
+      // Wait until the queue is not full before writing the packet
+      while (packetId - hsa_queue_load_read_index_acquire(queue) >= queue->size);
+      return packetId;
    }
 
-   inline hsa_kernel_dispatch_packet_t *
+   inline hsa_kernel_dispatch_packet_t*
    queueGetKernelDispatchPacketPtr(const uint64_t packetId) {
-      const uint32_t queueMask = queueSize - 1;
-      hsa_kernel_dispatch_packet_t *packetPtr =
+      const uint32_t queueMask = queue->size - 1;
+      hsa_kernel_dispatch_packet_t* packetPtr =
             reinterpret_cast<hsa_kernel_dispatch_packet_t *>(queue->base_address) + (packetId & queueMask);
       return packetPtr;
    }
 
-   void *getArgBufferPtr(const uint64_t packetId);
+   void* getArgBufferPtr(const uint64_t packetId);
 
-   static void writeArgs(void * /* writer */) {
+   static void writeArgs(void* /* writer */) {
    }
 
    template<typename T, typename ... Ts>
-   static void writeArgs(void *writer, const T &arg, const Ts &... args) {
+   static void writeArgs(void* writer, const T& arg, const Ts&... args) {
       uintptr_t pointer = reinterpret_cast<uintptr_t>(writer);
       uint8_t *writePosition = reinterpret_cast<uint8_t *>((pointer + alignof(T) - 1) & -alignof(T));
       *reinterpret_cast<T *>(writePosition) = arg;
@@ -234,7 +253,6 @@ private:
    hsa_code_object_t codeObject;
    hsa_executable_t executable;
    hsa_queue_t *queue;
-   uint32_t queueSize;
 
    /// Points to the pre-allocated kernel argument memory-segment. It contains
    /// ``queueSize'' entries, each of size ``argumentSize''.
